@@ -61,7 +61,6 @@
     function restartQuiz() {
       if (allQuestions.length === 0) return;
 
-      // Mescola l'intero array e seleziona 5 domande casuali
       const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
       currentQuizQuestions = shuffled.slice(0, Math.min(5, allQuestions.length));
 
@@ -80,7 +79,9 @@
     function showQuestion() {
       answered = false;
       const q = currentQuizQuestions[currentIndex];
-      document.getElementById('question-number').innerText = `Domanda ${currentIndex + 1} di ${currentQuizQuestions.length}`;
+      
+      // Mostra la sequenza corrente e il numero ID dal file JSON
+      document.getElementById('question-number').innerHTML = `Domanda ${currentIndex + 1} di ${currentQuizQuestions.length} <span class="text-slate-500 font-normal">(ID: #${q.id})</span>`;
       document.getElementById('question-text').innerText = q.domanda;
       document.getElementById('next-btn').classList.add('hidden');
 
