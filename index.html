@@ -3,42 +3,114 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiz Interactive</title>
+  <title>Quiz Concorso - Pro</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+  </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 antialiased">
 
-  <div id="quiz-card" class="bg-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-2xl w-full border border-slate-700">
-    <!-- Status Header -->
-    <div id="status-bar" class="flex justify-between items-center mb-6 text-sm text-slate-400 font-semibold">
-      <span id="question-number">Domanda 1</span>
+  <div class="max-w-3xl w-full bg-slate-900/90 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden flex flex-col min-h-[500px]">
+    
+    <!-- Barra di Progresso -->
+    <div class="h-1.5 w-full bg-slate-800">
+      <div id="progress-bar" class="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500 w-0"></div>
+    </div>
+
+    <!-- Header -->
+    <div id="quiz-header" class="p-6 border-b border-slate-800/80 flex flex-wrap justify-between items-center gap-4">
       <div class="flex items-center gap-3">
-        <span id="score">Punteggio: 0</span>
-        <button onclick="restartQuiz()" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-slate-200 transition-all font-medium">
-          ↺ Riavvia
+        <span id="question-badge" class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full text-xs font-semibold tracking-wide">
+          Domanda 1/5
+        </span>
+        <span id="json-id-badge" class="text-xs text-slate-400 font-mono bg-slate-800 px-2.5 py-1 rounded-md">
+          ID: #--
+        </span>
+      </div>
+
+      <div class="flex items-center gap-4 text-sm font-medium">
+        <div class="flex items-center gap-1.5 text-slate-400">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span id="timer">00:00</span>
+        </div>
+        
+        <!-- Selettore domande -->
+        <select id="q-count-select" onchange="restartQuiz()" class="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 transition-colors">
+          <option value="5">5 Domande</option>
+          <option value="10">10 Domande</option>
+          <option value="20">20 Domande</option>
+        </select>
+
+        <button onclick="restartQuiz()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          Riavvia
         </button>
       </div>
     </div>
-    
-    <!-- Domanda -->
-    <h2 id="question-text" class="text-xl md:text-2xl font-bold mb-6 text-slate-100 leading-snug">Caricamento...</h2>
-    
-    <!-- Opzioni -->
-    <div id="options-container" class="space-y-3 mb-6"></div>
-    
-    <!-- Bottone Avanti -->
-    <button id="next-btn" onclick="nextQuestion()" class="hidden w-full bg-blue-600 hover:bg-blue-500 font-semibold py-3 rounded-xl transition-all">
-      Prossima Domanda
-    </button>
 
-    <!-- Schermata Finale -->
-    <div id="result-screen" class="hidden text-center py-6">
-      <h2 class="text-3xl font-bold mb-4 text-emerald-400">Quiz Completato!</h2>
-      <p id="final-score" class="text-xl mb-6 text-slate-300"></p>
-      <button onclick="restartQuiz()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition-all">
-        Ricomincia con altre 5 domande
+    <!-- Area Principale Quiz -->
+    <div id="quiz-body" class="p-6 md:p-8 flex-1 flex flex-col justify-between">
+      
+      <div>
+        <h2 id="question-text" class="text-lg md:text-xl font-semibold text-slate-100 leading-relaxed mb-6">
+          Caricamento delle domande...
+        </h2>
+
+        <div id="options-container" class="space-y-3">
+          <!-- Opzioni caricate via JS -->
+        </div>
+      </div>
+
+      <!-- Footer / Bottone Avanti -->
+      <div class="mt-8 pt-4 border-t border-slate-800/60 flex justify-between items-center">
+        <div id="score-counter" class="text-xs text-slate-400 font-medium">
+          Punteggio: <span id="current-score" class="text-slate-200 font-bold">0</span>
+        </div>
+        <button id="next-btn" onclick="nextQuestion()" class="hidden bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium px-6 py-2.5 rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/20 flex items-center gap-2 text-sm">
+          <span>Prossima</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Schermata Finale & Report -->
+    <div id="result-screen" class="hidden p-6 md:p-8 space-y-6">
+      <div class="text-center space-y-3">
+        <div class="inline-flex p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 mb-2">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h2 class="text-2xl md:text-3xl font-bold text-slate-100">Test Completato!</h2>
+        <p id="final-stats" class="text-sm text-slate-400 max-w-md mx-auto"></p>
+      </div>
+
+      <!-- Percentuale Score Card -->
+      <div class="grid grid-cols-3 gap-3 bg-slate-950/60 border border-slate-800 p-4 rounded-2xl text-center">
+        <div>
+          <span class="block text-xs text-slate-500 uppercase font-semibold">Corrette</span>
+          <span id="stat-correct" class="text-xl font-bold text-emerald-400">0</span>
+        </div>
+        <div>
+          <span class="block text-xs text-slate-500 uppercase font-semibold">Accuratezza</span>
+          <span id="stat-accuracy" class="text-xl font-bold text-blue-400">0%</span>
+        </div>
+        <div>
+          <span class="block text-xs text-slate-500 uppercase font-semibold">Tempo</span>
+          <span id="stat-time" class="text-xl font-bold text-indigo-400">00:00</span>
+        </div>
+      </div>
+
+      <!-- Revisione Dettagliata Risposte -->
+      <div class="space-y-3 max-h-60 overflow-y-auto pr-1" id="review-container">
+        <!-- Generato via JS -->
+      </div>
+
+      <button onclick="restartQuiz()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm">
+        Ricomincia Nuovo Test
       </button>
     </div>
+
   </div>
 
   <script>
@@ -47,6 +119,9 @@
     let currentIndex = 0;
     let score = 0;
     let answered = false;
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let userHistory = [];
 
     async function loadQuestions() {
       try {
@@ -54,34 +129,58 @@
         allQuestions = await res.json();
         restartQuiz();
       } catch (err) {
-        document.getElementById('question-text').innerText = "Errore nel caricamento del file questions.json";
+        document.getElementById('question-text').innerText = "Errore durante il caricamento del file questions.json";
       }
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      secondsElapsed = 0;
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        secondsElapsed++;
+        updateTimerDisplay();
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const mins = String(Math.floor(secondsElapsed / 60)).padStart(2, '0');
+      const secs = String(secondsElapsed % 60).padStart(2, '0');
+      document.getElementById('timer').innerText = `${mins}:${secs}`;
     }
 
     function restartQuiz() {
       if (allQuestions.length === 0) return;
 
+      const requestedCount = parseInt(document.getElementById('q-count-select').value);
       const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
-      currentQuizQuestions = shuffled.slice(0, Math.min(5, allQuestions.length));
+      currentQuizQuestions = shuffled.slice(0, Math.min(requestedCount, allQuestions.length));
 
       currentIndex = 0;
       score = 0;
+      userHistory = [];
       
-      document.getElementById('score').innerText = `Punteggio: 0`;
-      document.getElementById('status-bar').classList.remove('hidden');
-      document.getElementById('question-text').classList.remove('hidden');
-      document.getElementById('options-container').classList.remove('hidden');
+      document.getElementById('current-score').innerText = '0';
+      document.getElementById('quiz-header').classList.remove('hidden');
+      document.getElementById('quiz-body').classList.remove('hidden');
       document.getElementById('result-screen').classList.add('hidden');
       
+      startTimer();
       showQuestion();
     }
 
     function showQuestion() {
       answered = false;
       const q = currentQuizQuestions[currentIndex];
-      
-      // Mostra la sequenza corrente e il numero ID dal file JSON
-      document.getElementById('question-number').innerHTML = `Domanda ${currentIndex + 1} di ${currentQuizQuestions.length} <span class="text-slate-500 font-normal">(ID: #${q.id})</span>`;
+      const total = currentQuizQuestions.length;
+
+      // Aggiorna la barra di progresso
+      const progressPercent = ((currentIndex) / total) * 100;
+      document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+
+      // Badge e Testi
+      document.getElementById('question-badge').innerText = `Domanda ${currentIndex + 1}/${total}`;
+      document.getElementById('json-id-badge').innerText = `ID: #${q.id}`;
       document.getElementById('question-text').innerText = q.domanda;
       document.getElementById('next-btn').classList.add('hidden');
 
@@ -90,29 +189,49 @@
 
       Object.entries(q.opzioni).forEach(([key, text]) => {
         const btn = document.createElement('button');
-        btn.className = "w-full text-left p-4 rounded-xl border border-slate-700 bg-slate-800/60 hover:bg-slate-700 transition-all font-medium flex items-start gap-3";
-        btn.innerHTML = `<span class="bg-slate-700 text-blue-400 px-2.5 py-1 rounded-lg font-bold text-sm">${key}</span> <span class="flex-1">${text}</span>`;
-        btn.onclick = () => selectOption(btn, key, q.risposta_corretta);
+        btn.className = "w-full text-left p-4 rounded-2xl border border-slate-800 bg-slate-950/40 hover:bg-slate-800/60 hover:border-slate-700 transition-all font-medium flex items-start gap-3.5 group";
+        btn.innerHTML = `
+          <span class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-800 group-hover:bg-blue-600/20 text-slate-400 group-hover:text-blue-400 font-semibold text-xs transition-colors border border-slate-700/50">${key}</span>
+          <span class="flex-1 text-sm text-slate-300 group-hover:text-slate-100 pt-0.5 leading-snug">${text}</span>
+        `;
+        btn.onclick = () => selectOption(btn, key, q);
         container.appendChild(btn);
       });
     }
 
-    function selectOption(selectedBtn, selectedKey, correctKey) {
+    function selectOption(selectedBtn, selectedKey, questionObj) {
       if (answered) return;
       answered = true;
+
+      const correctKey = questionObj.risposta_corretta;
+      const isCorrect = selectedKey === correctKey;
+
+      if (isCorrect) score++;
+
+      // Salva nella cronologia per il report finale
+      userHistory.push({
+        question: questionObj.domanda,
+        id: questionObj.id,
+        userAnswer: selectedKey,
+        correctAnswer: correctKey,
+        isCorrect: isCorrect
+      });
+
+      document.getElementById('current-score').innerText = score;
 
       const buttons = document.getElementById('options-container').querySelectorAll('button');
       buttons.forEach(btn => btn.disabled = true);
 
-      if (selectedKey === correctKey) {
-        selectedBtn.classList.add('bg-emerald-950', 'border-emerald-500', 'text-emerald-300');
-        score++;
-        document.getElementById('score').innerText = `Punteggio: ${score}`;
+      if (isCorrect) {
+        selectedBtn.className = "w-full text-left p-4 rounded-2xl border border-emerald-500/50 bg-emerald-500/10 text-emerald-200 font-medium flex items-start gap-3.5";
       } else {
-        selectedBtn.classList.add('bg-rose-950', 'border-rose-500', 'text-rose-300');
+        selectedBtn.className = "w-full text-left p-4 rounded-2xl border border-rose-500/50 bg-rose-500/10 text-rose-200 font-medium flex items-start gap-3.5";
+        
+        // Evidenzia la risposta corretta
         buttons.forEach(btn => {
-          if (btn.querySelector('span').innerText === correctKey) {
-            btn.classList.add('bg-emerald-950', 'border-emerald-500', 'text-emerald-300');
+          const keySpan = btn.querySelector('span');
+          if (keySpan && keySpan.innerText.trim() === correctKey) {
+            btn.className = "w-full text-left p-4 rounded-2xl border border-emerald-500/50 bg-emerald-500/10 text-emerald-200 font-medium flex items-start gap-3.5";
           }
         });
       }
@@ -120,7 +239,7 @@
       if (currentIndex < currentQuizQuestions.length - 1) {
         document.getElementById('next-btn').classList.remove('hidden');
       } else {
-        setTimeout(showResults, 1200);
+        setTimeout(showResults, 1000);
       }
     }
 
@@ -130,14 +249,36 @@
     }
 
     function showResults() {
-      document.getElementById('status-bar').classList.add('hidden');
-      document.getElementById('question-text').classList.add('hidden');
-      document.getElementById('options-container').classList.add('hidden');
-      document.getElementById('next-btn').classList.add('hidden');
+      clearInterval(timerInterval);
+      document.getElementById('progress-bar').style.width = '100%';
+      document.getElementById('quiz-header').classList.add('hidden');
+      document.getElementById('quiz-body').classList.add('hidden');
       
-      const resultScreen = document.getElementById('result-screen');
-      resultScreen.classList.remove('hidden');
-      document.getElementById('final-score').innerText = `Hai risposto correttamente a ${score} su ${currentQuizQuestions.length} domande.`;
+      const total = currentQuizQuestions.length;
+      const accuracy = Math.round((score / total) * 100);
+
+      document.getElementById('stat-correct').innerText = `${score}/${total}`;
+      document.getElementById('stat-accuracy').innerText = `${accuracy}%`;
+      document.getElementById('stat-time').innerText = document.getElementById('timer').innerText;
+
+      // Genera lista di revisione
+      const reviewContainer = document.getElementById('review-container');
+      reviewContainer.innerHTML = '';
+
+      userHistory.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = `p-3.5 rounded-xl border text-xs leading-relaxed ${item.isCorrect ? 'bg-emerald-950/20 border-emerald-800/40' : 'bg-rose-950/20 border-rose-800/40'}`;
+        div.innerHTML = `
+          <div class="flex justify-between font-semibold mb-1">
+            <span class="${item.isCorrect ? 'text-emerald-400' : 'text-rose-400'}">#${index + 1} (ID: #${item.id}) - ${item.isCorrect ? 'Corretta' : 'Errata'}</span>
+            <span class="text-slate-400">Scelta: ${item.userAnswer} | Esatta: ${item.correctAnswer}</span>
+          </div>
+          <div class="text-slate-300 line-clamp-2">${item.question}</div>
+        `;
+        reviewContainer.appendChild(div);
+      });
+
+      document.getElementById('result-screen').classList.remove('hidden');
     }
 
     loadQuestions();
