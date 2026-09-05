@@ -43,10 +43,10 @@
           <option value="20">20 Domande</option>
         </select>
 
-        <button onclick="restartQuiz()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          Riavvia
-        </button>
+      <button onclick="restartQuiz()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        Riavvia
+      </button>
       </div>
     </div>
 
@@ -64,10 +64,11 @@
       </div>
 
       <!-- Footer / Bottone Avanti -->
-      <div class="mt-8 pt-4 border-t border-slate-800/60 flex justify-between items-center">
+      <div class="mt-8 pt-4 border-t border-slate-800/60 flex justify-between items-center gap-4">
         <div id="score-counter" class="text-xs text-slate-400 font-medium">
           Punteggio: <span id="current-score" class="text-slate-200 font-bold">0</span>
         </div>
+        <div id="database-badge" class="text-[10px] uppercase tracking-[0.18em] text-slate-500 bg-slate-800/70 px-2 py-1 rounded-full border border-slate-700">DB: cancellieri-2017.csv</div>
         <button id="next-btn" onclick="nextQuestion()" class="hidden bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium px-6 py-2.5 rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/20 flex items-center gap-2 text-sm">
           <span>Prossima</span>
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
@@ -114,6 +115,8 @@
   </div>
 
   <script>
+    const DATABASE_FILE = 'cancellieri-2017.csv';
+
     let allQuestions = [];
     let currentQuizQuestions = [];
     let currentIndex = 0;
@@ -123,13 +126,136 @@
     let secondsElapsed = 0;
     let userHistory = [];
 
+    function normalizeCsvHeader(value) {
+      return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '');
+    }
+
+    function parseCsvLine(line, separator) {
+      const cells = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+          continue;
+        }
+
+        if (char === separator && !inQuotes) {
+          cells.push(current.trim());
+          current = '';
+          continue;
+        }
+
+        current += char;
+      }
+
+      cells.push(current.trim());
+      return cells;
+    }
+
+    function parseCsvRecords(csvText, separator = ';') {
+      return csvText
+        .replace(/\uFEFF/g, '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map(line => parseCsvLine(line, separator))
+        .filter(row => row.some(cell => String(cell || '').trim() !== ''));
+    }
+
+    function parseCsvQuestions(csvText) {
+      const cleanedText = String(csvText || '').replace(/\uFEFF/g, '');
+      if (!cleanedText.trim()) {
+        throw new Error('Il file CSV è vuoto.');
+      }
+
+      const delimiter = cleanedText.includes(';') ? ';' : ',';
+      const rows = parseCsvRecords(cleanedText, delimiter);
+      if (rows.length < 2) {
+        throw new Error('Il file CSV deve contenere intestazione e almeno una domanda.');
+      }
+
+      const headerIndex = rows.findIndex(row =>
+        row.some(cell => normalizeCsvHeader(cell).includes('domanda')) &&
+        row.some(cell => normalizeCsvHeader(cell).includes('risposta'))
+      );
+
+      if (headerIndex === -1) {
+        throw new Error('CSV non valido: intestazione non trovata.');
+      }
+
+      const normalizedQuestions = rows.slice(headerIndex + 1)
+        .map((row, rowIndex) => {
+          if (row.length < 5) return null;
+
+          const id = String(row[0] || '').trim();
+          const domanda = String(row[1] || '').trim();
+          const correct = String(row[2] || '').trim();
+          const wrong1 = String(row[3] || '').trim();
+          const wrong2 = String(row[4] || '').trim();
+
+          if (!domanda || !correct || !wrong1 || !wrong2) {
+            return null;
+          }
+
+          const values = [correct, wrong1, wrong2];
+
+          for (let i = values.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [values[i], values[j]] = [values[j], values[i]];
+          }
+
+          const opzioni = {
+            A: values[0],
+            B: values[1],
+            C: values[2]
+          };
+          const risposta_corretta = Object.keys(opzioni).find(key => opzioni[key] === correct) || 'A';
+
+          return {
+            id: Number(id) || rowIndex + 1,
+            domanda,
+            opzioni,
+            risposta_corretta
+          };
+        })
+        .filter(Boolean);
+
+      if (normalizedQuestions.length === 0) {
+        throw new Error('Nessuna domanda valida trovata nel CSV.');
+      }
+
+      return normalizedQuestions;
+    }
+
     async function loadQuestions() {
       try {
-        const res = await fetch('questions.json');
-        allQuestions = await res.json();
-        restartQuiz();
+        const res = await fetch(DATABASE_FILE);
+        if (!res.ok) {
+          throw new Error(`${DATABASE_FILE} non trovato`);
+        }
+
+        const csvText = await res.text();
+        allQuestions = parseCsvQuestions(csvText);
       } catch (err) {
-        document.getElementById('question-text').innerText = "Errore durante il caricamento del file questions.json";
+        document.getElementById('question-text').innerText = `Errore durante il caricamento del database CSV ${DATABASE_FILE}`;
+      }
+
+      if (allQuestions.length > 0) {
+        restartQuiz();
       }
     }
 
@@ -181,6 +307,7 @@
       // Badge e Testi
       document.getElementById('question-badge').innerText = `Domanda ${currentIndex + 1}/${total}`;
       document.getElementById('json-id-badge').innerText = `ID: #${q.id}`;
+      document.getElementById('database-badge').innerText = `DB: ${DATABASE_FILE}`;
       document.getElementById('question-text').innerText = q.domanda;
       document.getElementById('next-btn').classList.add('hidden');
 
@@ -191,7 +318,7 @@
         const btn = document.createElement('button');
         btn.className = "w-full text-left p-4 rounded-2xl border border-slate-800 bg-slate-950/40 hover:bg-slate-800/60 hover:border-slate-700 transition-all font-medium flex items-start gap-3.5 group";
         btn.innerHTML = `
-          <span class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-800 group-hover:bg-blue-600/20 text-slate-400 group-hover:text-blue-400 font-semibold text-xs transition-colors border border-slate-700/50">${key}</span>
+          <span class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-800 group-hover:bg-blue-600/20 text-slate-400 group-hover:text-blue-400 font-semibold text-xs transition-colors border border-slate-700/50 hidden">${key}</span>
           <span class="flex-1 text-sm text-slate-300 group-hover:text-slate-100 pt-0.5 leading-snug">${text}</span>
         `;
         btn.onclick = () => selectOption(btn, key, q);
@@ -227,7 +354,6 @@
       } else {
         selectedBtn.className = "w-full text-left p-4 rounded-2xl border border-rose-500/50 bg-rose-500/10 text-rose-200 font-medium flex items-start gap-3.5";
         
-        // Evidenzia la risposta corretta
         buttons.forEach(btn => {
           const keySpan = btn.querySelector('span');
           if (keySpan && keySpan.innerText.trim() === correctKey) {
@@ -271,7 +397,7 @@
         div.innerHTML = `
           <div class="flex justify-between font-semibold mb-1">
             <span class="${item.isCorrect ? 'text-emerald-400' : 'text-rose-400'}">#${index + 1} (ID: #${item.id}) - ${item.isCorrect ? 'Corretta' : 'Errata'}</span>
-            <span class="text-slate-400">Scelta: ${item.userAnswer} | Esatta: ${item.correctAnswer}</span>
+            <span class="text-slate-400">Scelta: ${item.isCorrect ? 'Corretta' : 'Sbagliata'}</span>
           </div>
           <div class="text-slate-300 line-clamp-2">${item.question}</div>
         `;
