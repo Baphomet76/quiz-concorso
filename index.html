@@ -386,12 +386,68 @@
       document.getElementById('timer').innerText = `${mins}:${secs}`;
     }
 
+    function getQuestionBucket(questionId) {
+      const id = Number(questionId) || 0;
+      if (id <= 1000) return 1;
+      if (id <= 2000) return 2;
+      if (id <= 3000) return 3;
+      if (id <= 4000) return 4;
+      return 5;
+    }
+
+    function shuffleArray(items) {
+      const copy = [...items];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function buildBalancedQuiz(requestedCount) {
+      const groups = {
+        1: [],
+        2: [],
+        3: [],
+        4: [],
+        5: []
+      };
+
+      allQuestions.forEach(question => {
+        const bucket = getQuestionBucket(question.id);
+        if (groups[bucket]) groups[bucket].push(question);
+      });
+
+      const availableBuckets = Object.keys(groups)
+        .map(Number)
+        .filter(bucket => groups[bucket] && groups[bucket].length > 0);
+
+      const selected = [];
+      let bucketQueue = shuffleArray(availableBuckets);
+
+      while (selected.length < requestedCount) {
+        if (bucketQueue.length === 0) {
+          bucketQueue = shuffleArray(availableBuckets);
+        }
+
+        const bucket = bucketQueue.shift();
+        const bucketQuestions = groups[bucket];
+
+        if (!bucketQuestions || bucketQuestions.length === 0) continue;
+
+        const randomIndex = Math.floor(Math.random() * bucketQuestions.length);
+        const question = bucketQuestions.splice(randomIndex, 1)[0];
+        selected.push(question);
+      }
+
+      return selected;
+    }
+
     function restartQuiz() {
       if (allQuestions.length === 0) return;
 
-      const requestedCount = parseInt(document.getElementById('q-count-select').value);
-      const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
-      currentQuizQuestions = shuffled.slice(0, Math.min(requestedCount, allQuestions.length));
+      const requestedCount = Math.min(parseInt(document.getElementById('q-count-select').value), allQuestions.length);
+      currentQuizQuestions = buildBalancedQuiz(requestedCount);
 
       currentIndex = 0;
       score = 0;
