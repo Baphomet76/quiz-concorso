@@ -38,11 +38,6 @@
           <span class="text-slate-200 font-medium">Utenti online</span>
           <strong id="online-users" class="text-base font-bold text-emerald-300 min-w-[1.2rem] text-center">0</strong>
         </div>
-        <div class="flex items-center gap-2.5 bg-gradient-to-r from-blue-500/10 via-slate-800/90 to-slate-800/90 border border-blue-500/30 rounded-full px-3 py-1.5 shadow-[0_0_18px_rgba(59,130,246,0.10)]">
-          <span class="inline-block h-2.5 w-2.5 rounded-full bg-blue-400"></span>
-          <span class="text-slate-200 font-medium">Quiz completati</span>
-          <strong id="total-attempts" class="text-base font-bold text-blue-300 min-w-[1.2rem] text-center">0</strong>
-        </div>
       </div>
 
       <div class="flex items-center gap-4 text-sm font-medium">
@@ -135,7 +130,6 @@
   <script>
     const DATABASE_FILE = 'cancellieri-2017.csv';
     const ACTIVE_SESSIONS_KEY = 'quiz_concorso_active_sessions';
-    const TOTAL_ATTEMPTS_KEY = 'quiz_concorso_total_attempts';
     const HEARTBEAT_MS = 12000;
     const SESSION_TIMEOUT_MS = 25000;
     const sessionId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -169,12 +163,6 @@
       const onlineCount = activeSessions.length || 1;
       const onlineNode = document.getElementById('online-users');
       if (onlineNode) onlineNode.innerText = String(onlineCount);
-    }
-
-    function refreshAttemptCounter() {
-      const totalAttempts = Number(localStorage.getItem(TOTAL_ATTEMPTS_KEY) || '0');
-      const attemptsNode = document.getElementById('total-attempts');
-      if (attemptsNode) attemptsNode.innerText = String(totalAttempts);
     }
 
     function registerHeartbeat() {
@@ -544,10 +532,6 @@
 
     function showResults() {
       clearInterval(timerInterval);
-      const attempts = Number(localStorage.getItem(TOTAL_ATTEMPTS_KEY) || '0') + 1;
-      localStorage.setItem(TOTAL_ATTEMPTS_KEY, String(attempts));
-      refreshAttemptCounter();
-
       document.getElementById('progress-bar').style.width = '100%';
       document.getElementById('quiz-header').classList.add('hidden');
       document.getElementById('quiz-body').classList.add('hidden');
@@ -581,7 +565,6 @@
       document.getElementById('result-screen').classList.remove('hidden');
     }
 
-    refreshAttemptCounter();
     startPresenceTracking();
     loadQuestions();
   </script>
