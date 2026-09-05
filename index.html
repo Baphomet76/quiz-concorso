@@ -29,14 +29,19 @@
         </span>
       </div>
 
-      <div class="flex items-center gap-3 text-xs text-slate-300">
-        <div class="flex items-center gap-2.5 bg-gradient-to-r from-emerald-500/10 via-slate-800/90 to-slate-800/90 border border-emerald-500/30 rounded-full px-3 py-1.5 shadow-[0_0_18px_rgba(16,185,129,0.12)]">
-          <span class="relative inline-flex h-2.5 w-2.5">
-            <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
-            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+      <div class="flex items-center gap-1.5 text-[10px] sm:text-xs text-slate-300">
+        <div class="inline-flex items-center gap-1 bg-slate-800/70 rounded-full px-1.5 py-0.5 transition-all duration-200">
+          <span class="relative inline-flex h-1.5 w-1.5">
+            <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400/60 animate-ping"></span>
+            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
           </span>
-          <span class="text-slate-200 font-medium">Utenti online</span>
-          <strong id="online-users" class="text-base font-bold text-emerald-300 min-w-[1.2rem] text-center">0</strong>
+          <span class="text-slate-200">Online</span>
+          <strong id="online-users" class="text-emerald-300 min-w-[0.9rem] text-center">0</strong>
+        </div>
+        <div id="total-badge" class="inline-flex items-center gap-1 bg-slate-800/70 rounded-full px-1.5 py-0.5 transition-all duration-200">
+          <span class="inline-block h-1.5 w-1.5 rounded-full bg-blue-400"></span>
+          <span class="text-slate-200">Quiz</span>
+          <strong id="total-completed" class="text-blue-300 min-w-[0.9rem] text-center">21</strong>
         </div>
       </div>
 
@@ -129,11 +134,14 @@
 
   <script>
     const DATABASE_FILE = 'cancellieri-2017.csv';
-    const ACTIVE_SESSIONS_KEY = 'quiz_concorso_active_sessions';
-    const HEARTBEAT_MS = 12000;
-    const SESSION_TIMEOUT_MS = 25000;
-    const sessionId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const bc = 'quiz_concorso_stats';
+    const SUPABASE_URL = 'https://cambypeevswkggrdsbtv.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_uqP-gxG8nJJDw82ppmURUg_bIk5WJCu';
+    const HEARTBEAT_MS = 15000;
+    const SESSION_TIMEOUT_MS = 30000;
+    const SESSION_STORAGE_KEY = 'quiz_concorso_session_id';
+    const INITIAL_COMPLETED_COUNT = 21;
+    const sessionId = localStorage.getItem(SESSION_STORAGE_KEY) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
 
     let allQuestions = [];
     let currentQuizQuestions = [];
@@ -144,85 +152,220 @@
     let secondsElapsed = 0;
     let userHistory = [];
     let heartbeatTimer = null;
+    let presenceStarted = false;
+    let presenceRequestInFlight = false;
 
-    function getStoredObject(key, fallback = {}) {
+    function supabaseHeaders() {
+      return {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      };
+    }
+
+    async function upsertSession() {
+      if (!SUPABASE_URL || !SUPABASE_KEY || presenceRequestInFlight) return;
+
+      presenceRequestInFlight = true;
+      const payload = [{
+        session_id: sessionId,
+        last_seen: new Date().toISOString()
+      }];
+
       try {
-        const raw = localStorage.getItem(key);
-        if (!raw) return fallback;
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === 'object' ? parsed : fallback;
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/quiz_sessions?on_conflict=session_id`, {
+          method: 'POST',
+          headers: supabaseHeaders(),
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          console.warn('Errore upsert session:', response.statusText);
+        }
       } catch (error) {
-        return fallback;
+        console.warn('Session sync failed:', error);
+      } finally {
+        presenceRequestInFlight = false;
       }
     }
 
-    function updateOnlineUsers() {
-      const sessions = getStoredObject(ACTIVE_SESSIONS_KEY, {});
-      const now = Date.now();
-      const activeSessions = Object.values(sessions).filter(session => (now - Number(session.timestamp || 0)) < SESSION_TIMEOUT_MS);
-      const onlineCount = activeSessions.length || 1;
-      const onlineNode = document.getElementById('online-users');
-      if (onlineNode) onlineNode.innerText = String(onlineCount);
-    }
-
-    function registerHeartbeat() {
-      const sessions = getStoredObject(ACTIVE_SESSIONS_KEY, {});
-      sessions[sessionId] = { sessionId, timestamp: Date.now() };
-      localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(sessions));
-      if ('BroadcastChannel' in window && window.__quizStatsChannel) {
-        window.__quizStatsChannel.postMessage({ type: 'heartbeat', sessionId });
+    async function pruneInactiveSessions() {
+      if (!SUPABASE_URL || !SUPABASE_KEY || presenceRequestInFlight) return;
+      try {
+        const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
+        await fetch(`${SUPABASE_URL}/rest/v1/quiz_sessions?last_seen=lt.${cutoff}`, {
+          method: 'DELETE',
+          headers: supabaseHeaders()
+        });
+      } catch (error) {
+        console.warn('Prune sessions failed:', error);
       }
-      updateOnlineUsers();
     }
 
-    function cleanupInactiveSessions() {
-      const sessions = getStoredObject(ACTIVE_SESSIONS_KEY, {});
-      const now = Date.now();
-      const activeSessions = Object.fromEntries(
-        Object.entries(sessions).filter(([key, value]) => {
-          return key === sessionId || (now - Number(value.timestamp || 0)) < SESSION_TIMEOUT_MS;
-        })
-      );
-      localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(activeSessions));
+    async function refreshOnlineUsers() {
+      if (!SUPABASE_URL || !SUPABASE_KEY || presenceRequestInFlight) {
+        return;
+      }
+
+      try {
+        const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/quiz_sessions?select=session_id&last_seen=gte.${cutoff}`, {
+          headers: supabaseHeaders()
+        });
+
+        if (!response.ok) {
+          throw new Error('online count fetch failed');
+        }
+
+        const rows = await response.json();
+        const onlineCount = Array.isArray(rows) ? rows.length : 0;
+        const onlineNode = document.getElementById('online-users');
+        const prevValue = Number(onlineNode?.dataset.value || '0');
+        onlineNode.innerText = String(onlineCount);
+        onlineNode.dataset.value = String(onlineCount);
+
+        if (onlineCount > 1 && onlineCount !== prevValue) {
+          pulseBadge('online-users');
+        }
+      } catch (error) {
+        console.warn('Online users failed:', error);
+        const onlineNode = document.getElementById('online-users');
+        if (onlineNode) {
+          onlineNode.innerText = '0';
+          onlineNode.dataset.value = '0';
+        }
+      }
+    }
+
+    function pulseBadge(badgeId) {
+      const badge = document.getElementById(badgeId);
+      if (!badge) return;
+      badge.classList.remove('scale-100');
+      badge.classList.add('scale-105', 'ring-1', 'ring-emerald-400/30');
+      setTimeout(() => {
+        badge.classList.remove('scale-105', 'ring-1', 'ring-emerald-400/30');
+        badge.classList.add('scale-100');
+      }, 180);
+    }
+
+    function updateTotalBadge(value) {
+      const totalBadge = document.getElementById('total-badge');
+      const totalNode = document.getElementById('total-completed');
+      if (!totalBadge || !totalNode) return;
+
+      const numericValue = Number(value) || 0;
+      totalBadge.classList.remove('hidden');
+      totalBadge.classList.add('inline-flex');
+
+      const prevValue = Number(totalNode.dataset.value || '0');
+      totalNode.innerText = String(numericValue);
+      totalNode.dataset.value = String(numericValue);
+
+      if (numericValue > prevValue) {
+        pulseBadge('total-badge');
+      }
+    }
+
+    async function refreshGlobalQuizCounter() {
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        updateTotalBadge(INITIAL_COMPLETED_COUNT);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/quiz_stats?select=value&key=eq.total_completed`, {
+          headers: supabaseHeaders()
+        });
+
+        if (!response.ok) {
+          throw new Error('stats fetch failed');
+        }
+
+        const rows = await response.json();
+        const value = Array.isArray(rows) && rows.length > 0 ? Number(rows[0].value || 0) : INITIAL_COMPLETED_COUNT;
+
+        if (value <= 0) {
+          updateTotalBadge(INITIAL_COMPLETED_COUNT);
+          const initResponse = await fetch(`${SUPABASE_URL}/rest/v1/quiz_stats?key=eq.total_completed`, {
+            method: 'PATCH',
+            headers: supabaseHeaders(),
+            body: JSON.stringify({ value: INITIAL_COMPLETED_COUNT })
+          });
+          if (!initResponse.ok) {
+            console.warn('Initial total count seed failed');
+          }
+          return;
+        }
+
+        updateTotalBadge(value);
+      } catch (error) {
+        console.warn('Global counter fetch failed:', error);
+        updateTotalBadge(INITIAL_COMPLETED_COUNT);
+      }
+    }
+
+    async function incrementGlobalQuizCounter() {
+      if (!SUPABASE_URL || !SUPABASE_KEY) return;
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/quiz_stats?select=id,value&key=eq.total_completed`, {
+          headers: supabaseHeaders()
+        });
+
+        if (!response.ok) {
+          throw new Error('counter read failed');
+        }
+
+        const rows = await response.json();
+        const currentRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+        const nextValue = Number(currentRow?.value || INITIAL_COMPLETED_COUNT) + 1;
+
+        if (currentRow) {
+          await fetch(`${SUPABASE_URL}/rest/v1/quiz_stats?id=eq.${currentRow.id}`, {
+            method: 'PATCH',
+            headers: supabaseHeaders(),
+            body: JSON.stringify({ value: nextValue })
+          });
+        } else {
+          await fetch(`${SUPABASE_URL}/rest/v1/quiz_stats`, {
+            method: 'POST',
+            headers: supabaseHeaders(),
+            body: JSON.stringify({ key: 'total_completed', value: nextValue })
+          });
+        }
+
+        await refreshGlobalQuizCounter();
+      } catch (error) {
+        console.warn('Increment completed counter failed:', error);
+      }
     }
 
     function startPresenceTracking() {
-      registerHeartbeat();
-      cleanupInactiveSessions();
+      if (presenceStarted) return;
+      presenceStarted = true;
+
+      const tick = async () => {
+        await upsertSession();
+        await pruneInactiveSessions();
+        await refreshOnlineUsers();
+      };
+
+      tick();
+      refreshGlobalQuizCounter();
+
       if (heartbeatTimer) clearInterval(heartbeatTimer);
-      heartbeatTimer = setInterval(() => {
-        registerHeartbeat();
-        cleanupInactiveSessions();
-      }, HEARTBEAT_MS);
+      heartbeatTimer = setInterval(tick, HEARTBEAT_MS);
 
-      if ('BroadcastChannel' in window) {
-        const channel = new BroadcastChannel(bc);
-        channel.onmessage = (event) => {
-          if (event.data && event.data.type === 'heartbeat') {
-            const sessions = getStoredObject(ACTIVE_SESSIONS_KEY, {});
-            sessions[event.data.sessionId] = { sessionId: event.data.sessionId, timestamp: Date.now() };
-            localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(sessions));
-            updateOnlineUsers();
-          }
-        };
-        window.__quizStatsChannel = channel;
+      if (!window.__quizPresenceBeforeUnloadRegistered) {
+        window.__quizPresenceBeforeUnloadRegistered = true;
+        window.addEventListener('beforeunload', () => {
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
+          fetch(`${SUPABASE_URL}/rest/v1/quiz_sessions?session_id=eq.${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE',
+            headers: supabaseHeaders()
+          }).catch(() => {});
+        });
       }
-
-      window.addEventListener('storage', (event) => {
-        if (event.key === ACTIVE_SESSIONS_KEY) {
-          updateOnlineUsers();
-        }
-      });
-
-      window.addEventListener('beforeunload', () => {
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        const sessions = getStoredObject(ACTIVE_SESSIONS_KEY, {});
-        delete sessions[sessionId];
-        localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(sessions));
-        if ('BroadcastChannel' in window && window.__quizStatsChannel) {
-          window.__quizStatsChannel.close();
-        }
-      });
     }
 
     function normalizeCsvHeader(value) {
@@ -532,6 +675,7 @@
 
     function showResults() {
       clearInterval(timerInterval);
+      incrementGlobalQuizCounter();
       document.getElementById('progress-bar').style.width = '100%';
       document.getElementById('quiz-header').classList.add('hidden');
       document.getElementById('quiz-body').classList.add('hidden');
