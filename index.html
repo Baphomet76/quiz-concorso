@@ -397,7 +397,7 @@
         div.innerHTML = `
           <div class="flex justify-between font-semibold mb-1">
             <span class="${item.isCorrect ? 'text-emerald-400' : 'text-rose-400'}">#${index + 1} (ID: #${item.id}) - ${item.isCorrect ? 'Corretta' : 'Errata'}</span>
-            <span class="text-slate-400">Scelta: ${item.isCorrect ? 'Corretta' : 'Sbagliata'}</span>
+            <span class="text-slate-400">${item.isCorrect ? 'Scelta: Corretta' : `Scelta: Sbagliata • Giusta: ${item.correctAnswer}`}</span>
           </div>
           <div class="text-slate-300 line-clamp-2">${item.question}</div>
         `;
