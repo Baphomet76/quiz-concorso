@@ -25,7 +25,7 @@
     <div id="quiz-header" class="p-6 border-b border-slate-800/80 flex flex-wrap justify-between items-center gap-4">
       <div class="flex items-center gap-3">
         <span id="question-badge" class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full text-xs font-semibold tracking-wide">
-          Domanda 1/5
+          Domanda 1/30
         </span>
       </div>
 
@@ -53,9 +53,11 @@
         
         <!-- Selettore domande -->
         <select id="q-count-select" onchange="restartQuiz()" class="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 transition-colors">
-          <option value="5">5 Domande</option>
-          <option value="10">10 Domande</option>
-          <option value="20">20 Domande</option>
+          <option value="6">6 Domande</option>
+          <option value="12">12 Domande</option>
+          <option value="18">18 Domande</option>
+          <option value="24">24 Domande</option>
+          <option value="30" selected>30 Domande</option>
         </select>
 
       <button onclick="restartQuiz()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
@@ -87,7 +89,7 @@
           <div id="json-id-badge" class="text-[10px] uppercase tracking-[0.18em] text-slate-500 bg-slate-800/70 px-2 py-1 rounded-full border border-slate-700">
             ID: #--
           </div>
-          <div id="database-badge" class="text-[10px] uppercase tracking-[0.18em] text-slate-500 bg-slate-800/70 px-2 py-1 rounded-full border border-slate-700">DB: database.csv</div>
+          <div id="database-badge" class="text-[10px] uppercase tracking-[0.18em] text-slate-500 bg-slate-800/70 px-2 py-1 rounded-full border border-slate-700">DB: database_con_descrizioni.csv</div>
         </div>
         <button id="next-btn" onclick="nextQuestion()" class="hidden w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium px-6 py-2.5 rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/20 items-center justify-center gap-2 text-sm sm:flex">
           <span>Prossima</span>
@@ -135,10 +137,9 @@
   </div>
 
   <script>
-    const DATABASE_FILE = 'database.csv';
+    const DATABASE_FILE = 'database_con_descrizioni.csv';
     const SUPABASE_URL = 'https://cambypeevswkggrdsbtv.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_uqP-gxG8nJJDw82ppmURUg_bIk5WJCu';
-    const GEMINI_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/gemini-explain`;
     const HEARTBEAT_MS = 15000;
     const SESSION_TIMEOUT_MS = 30000;
     const SESSION_STORAGE_KEY = 'quiz_concorso_session_id';
@@ -412,13 +413,52 @@
     }
 
     function parseCsvRecords(csvText, separator = ';') {
-      return csvText
-        .replace(/\uFEFF/g, '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .split('\n')
-        .map(line => parseCsvLine(line, separator))
-        .filter(row => row.some(cell => String(cell || '').trim() !== ''));
+      const text = String(csvText || '').replace(/\uFEFF/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const rows = [];
+      let currentRow = [];
+      let currentCell = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+
+        if (char === '"') {
+          if (inQuotes && text[i + 1] === '"') {
+            currentCell += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+          continue;
+        }
+
+        if (char === separator && !inQuotes) {
+          currentRow.push(currentCell.trim());
+          currentCell = '';
+          continue;
+        }
+
+        if ((char === '\n') && !inQuotes) {
+          currentRow.push(currentCell.trim());
+          if (currentRow.some(cell => String(cell || '').trim() !== '')) {
+            rows.push(currentRow);
+          }
+          currentRow = [];
+          currentCell = '';
+          continue;
+        }
+
+        currentCell += char;
+      }
+
+      if (currentCell.length > 0 || currentRow.length > 0) {
+        currentRow.push(currentCell.trim());
+        if (currentRow.some(cell => String(cell || '').trim() !== '')) {
+          rows.push(currentRow);
+        }
+      }
+
+      return rows;
     }
 
     function parseCsvQuestions(csvText) {
@@ -451,6 +491,7 @@
           const correct = String(row[2] || '').trim();
           const wrong1 = String(row[3] || '').trim();
           const wrong2 = String(row[4] || '').trim();
+          const descrizione = String(row[5] || '').trim();
 
           if (!domanda || !correct || !wrong1 || !wrong2) {
             return null;
@@ -474,7 +515,8 @@
             id: Number(id) || rowIndex + 1,
             domanda,
             opzioni,
-            risposta_corretta
+            risposta_corretta,
+            descrizione
           };
         })
         .filter(Boolean);
@@ -537,47 +579,42 @@
       return copy;
     }
 
-    function buildBalancedQuiz(requestedCount) {
-      const groups = {
-        1: [],
-        2: [],
-        3: []
-      };
+    function getAllowedQuizCount(value) {
+      const allowedCounts = [6, 12, 18, 24, 30];
+      const numericValue = Number(value) || 30;
+      return allowedCounts.includes(numericValue) ? numericValue : 30;
+    }
 
-      allQuestions.forEach(question => {
-        const bucket = getQuestionBucket(question.id);
-        if (groups[bucket]) groups[bucket].push(question);
+    function buildBalancedQuiz(requestedCount) {
+      const allowedCounts = [6, 12, 18, 24, 30];
+      const normalizedCount = allowedCounts.includes(requestedCount) ? requestedCount : 30;
+      const perBandCount = normalizedCount / 6;
+      const bands = Array.from({ length: 6 }, (_, bandIndex) => {
+        const start = bandIndex * 30 + 1;
+        const end = start + 29;
+        return allQuestions.filter(question => question.id >= start && question.id <= end);
       });
 
-      const availableBuckets = Object.keys(groups)
-        .map(Number)
-        .filter(bucket => groups[bucket] && groups[bucket].length > 0);
+      const selectedByBand = bands.map(groupQuestions => shuffleArray(groupQuestions).slice(0, perBandCount));
+      const orderedQuestions = [];
 
-      const selected = [];
-      let bucketQueue = shuffleArray(availableBuckets);
+      for (let slot = 0; slot < normalizedCount; slot++) {
+        const bandIndex = slot % 6;
+        const possibleQuestions = selectedByBand[bandIndex];
+        if (!possibleQuestions || possibleQuestions.length === 0) continue;
 
-      while (selected.length < requestedCount) {
-        if (bucketQueue.length === 0) {
-          bucketQueue = shuffleArray(availableBuckets);
-        }
-
-        const bucket = bucketQueue.shift();
-        const bucketQuestions = groups[bucket];
-
-        if (!bucketQuestions || bucketQuestions.length === 0) continue;
-
-        const randomIndex = Math.floor(Math.random() * bucketQuestions.length);
-        const question = bucketQuestions.splice(randomIndex, 1)[0];
-        selected.push(question);
+        const randomIndex = Math.floor(Math.random() * possibleQuestions.length);
+        const chosenQuestion = possibleQuestions.splice(randomIndex, 1)[0];
+        orderedQuestions.push(chosenQuestion);
       }
 
-      return selected;
+      return orderedQuestions;
     }
 
     function restartQuiz() {
       if (allQuestions.length === 0) return;
 
-      const requestedCount = Math.min(parseInt(document.getElementById('q-count-select').value), allQuestions.length);
+      const requestedCount = Math.min(getAllowedQuizCount(document.getElementById('q-count-select').value), allQuestions.length);
       currentQuizQuestions = buildBalancedQuiz(requestedCount);
 
       currentIndex = 0;
@@ -593,21 +630,32 @@
       showQuestion();
     }
 
+    function getUnansweredQuestionNumbers() {
+      const answeredIndexes = new Set(userHistory.map(item => Number(item.index)));
+      return currentQuizQuestions
+        .map((_, index) => index + 1)
+        .filter(questionNumber => !answeredIndexes.has(questionNumber - 1));
+    }
+
     function showQuestion() {
       answered = false;
       const q = currentQuizQuestions[currentIndex];
       const total = currentQuizQuestions.length;
+      const nextBtn = document.getElementById('next-btn');
+      const isLastQuestion = currentIndex === total - 1;
 
-      // Aggiorna la barra di progresso
       const progressPercent = ((currentIndex) / total) * 100;
       document.getElementById('progress-bar').style.width = `${progressPercent}%`;
 
-      // Badge e Testi
       document.getElementById('question-badge').innerText = `Domanda ${currentIndex + 1}/${total}`;
       document.getElementById('json-id-badge').innerText = `ID: #${q.id}`;
       document.getElementById('database-badge').innerText = `DB: ${DATABASE_FILE}`;
       document.getElementById('question-text').innerText = q.domanda;
-      document.getElementById('next-btn').classList.add('hidden');
+      nextBtn.classList.add('hidden');
+      nextBtn.innerHTML = `
+        <span>${isLastQuestion ? 'TERMINA' : 'Continua'}</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+      `;
 
       const container = document.getElementById('options-container');
       container.innerHTML = '';
@@ -633,13 +681,14 @@
 
       if (isCorrect) score++;
 
-      // Salva nella cronologia per il report finale
       userHistory.push({
+        index: currentIndex,
         question: questionObj.domanda,
         id: questionObj.id,
         userAnswer: selectedKey,
         correctAnswer: correctKey,
         correctText: questionObj.opzioni[correctKey],
+        description: questionObj.descrizione,
         isCorrect: isCorrect
       });
 
@@ -661,56 +710,27 @@
         });
       }
 
-      if (currentIndex < currentQuizQuestions.length - 1) {
-        document.getElementById('next-btn').classList.remove('hidden');
-      } else {
-        setTimeout(showResults, 1000);
+      document.getElementById('next-btn').classList.remove('hidden');
+    }
+
+    function handleFinishQuiz() {
+      const unanswered = getUnansweredQuestionNumbers();
+      if (unanswered.length > 0) {
+        const message = `sei sicuro di voler continuare? non hai risposto alle domande ${unanswered.join(',')}`;
+        const confirmed = window.confirm(message);
+        if (!confirmed) return;
       }
+      showResults();
     }
 
     function nextQuestion() {
+      if (currentIndex >= currentQuizQuestions.length - 1) {
+        handleFinishQuiz();
+        return;
+      }
+
       currentIndex++;
       showQuestion();
-    }
-
-    async function explainWithGemini(item) {
-      const explanationBox = document.getElementById(`gemini-explanation-${item.id}`);
-      if (!explanationBox) return;
-
-      const button = explanationBox.previousElementSibling;
-      if (button) {
-        button.disabled = true;
-        button.innerText = 'STO SPIEGANDO...';
-      }
-
-      try {
-        const response = await fetch(GEMINI_FUNCTION_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_KEY
-          },
-          body: JSON.stringify({
-            question: item.question,
-            correctText: item.correctText || item.opzioni?.[item.correctAnswer] || 'N/D'
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Errore chiamata funzione Gemini');
-        }
-
-        const json = await response.json();
-        const text = json?.text || 'Non ho ricevuto una spiegazione valida.';
-        explanationBox.innerText = text;
-      } catch (error) {
-        explanationBox.innerText = 'Non ho potuto generare la spiegazione al momento. Controlla la funzione Supabase.';
-      } finally {
-        if (button) {
-          button.disabled = false;
-          button.innerText = 'CHIEDI LA SPIEGAZIONE A GEMINI';
-        }
-      }
     }
 
     function showResults() {
@@ -727,7 +747,6 @@
       document.getElementById('stat-accuracy').innerText = `${accuracy}%`;
       document.getElementById('stat-time').innerText = document.getElementById('timer').innerText;
 
-      // Genera lista di revisione
       const reviewContainer = document.getElementById('review-container');
       reviewContainer.innerHTML = '';
 
@@ -739,27 +758,26 @@
         div.innerHTML = `
           <div class="flex justify-between font-semibold mb-1 gap-2">
             <span class="${item.isCorrect ? 'text-emerald-400' : 'text-rose-400'}">#${index + 1} (ID: #${item.id}) - ${item.isCorrect ? 'Corretta' : 'Errata'}</span>
-            <span class="text-slate-400 text-right">${item.isCorrect ? 'Scelta: Corretta' : `Scelta: Sbagliata`}</span>
+            <span class="text-slate-400 text-right">${item.isCorrect ? 'Scelta: Corretta' : 'Scelta: Sbagliata'}</span>
           </div>
           <div class="text-slate-300 line-clamp-2">${item.question}</div>
           ${!item.isCorrect ? `<div class="mt-2 text-emerald-300"><span class="font-semibold">Giusta:</span> ${correctText}</div>` : ''}
           ${!item.isCorrect ? `
             <button type="button" class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1.5 text-[10px] uppercase tracking-[0.12em] text-slate-200 transition-colors hover:bg-slate-700">
-              CHIEDI LA SPIEGAZIONE A GEMINI
+              APPROFONDISCI LA RISPOSTA CORRETTA
             </button>
-            <div id="gemini-explanation-${item.id}" class="mt-2 hidden text-[11px] leading-relaxed text-slate-300"></div>
+            <div id="description-${item.id}" class="mt-2 hidden text-[11px] leading-relaxed text-slate-300"></div>
           ` : ''}
         `;
 
         if (!item.isCorrect) {
           const explainButton = div.querySelector('button');
-          const explanationBox = div.querySelector('div[id^="gemini-explanation-"]');
-          explainButton.addEventListener('click', async () => {
-            if (explanationBox) {
-              explanationBox.classList.remove('hidden');
-              explanationBox.innerText = 'Sto preparando la spiegazione...';
+          const descriptionBox = div.querySelector('div[id^="description-"]');
+          explainButton.addEventListener('click', () => {
+            if (descriptionBox) {
+              descriptionBox.classList.remove('hidden');
+              descriptionBox.innerText = item.description || 'Nessuna descrizione disponibile.';
             }
-            await explainWithGemini(item);
           });
         }
 

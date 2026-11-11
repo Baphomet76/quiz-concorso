@@ -2,7 +2,7 @@
 """
 validate_csv_and_site.py
 Validate a CSV file against the parser rules used in index.html and check simple site compatibility.
-Usage: python validate_csv_and_site.py [--csv database.csv] [--html index.html]
+Usage: python validate_csv_and_site.py [--csv database_con_descrizioni.csv] [--html index.html]
 Exits with code 0 when OK, non-zero otherwise.
 """
 import argparse
@@ -49,12 +49,36 @@ def parse_csv_line(line, sep):
 
 
 def parse_records(text, sep):
-    text = text.replace('\ufeff', '')
-    # normalize newlines
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    lines = text.split('\n')
-    rows = [parse_csv_line(line, sep) for line in lines]
-    rows = [r for r in rows if any(str(c).strip() != '' for c in r)]
+    text = text.replace('\ufeff', '').replace('\r\n', '\n').replace('\r', '\n')
+    rows = []
+    current_row = []
+    current_cell = ''
+    in_quotes = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '"':
+            if in_quotes and i + 1 < len(text) and text[i + 1] == '"':
+                current_cell += '"'
+                i += 2
+                continue
+            in_quotes = not in_quotes
+        elif ch == sep and not in_quotes:
+            current_row.append(current_cell.strip())
+            current_cell = ''
+        elif ch == '\n' and not in_quotes:
+            current_row.append(current_cell.strip())
+            if any(str(c).strip() != '' for c in current_row):
+                rows.append(current_row)
+            current_row = []
+            current_cell = ''
+        else:
+            current_cell += ch
+        i += 1
+    if current_cell or current_row:
+        current_row.append(current_cell.strip())
+        if any(str(c).strip() != '' for c in current_row):
+            rows.append(current_row)
     return rows
 
 
@@ -142,7 +166,7 @@ def validate(csv_path, html_path):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--csv', default='database.csv', help='Path to CSV file')
+    p.add_argument('--csv', default='database_con_descrizioni.csv', help='Path to CSV file')
     p.add_argument('--html', default='index.html', help='Path to index.html')
     args = p.parse_args()
 
